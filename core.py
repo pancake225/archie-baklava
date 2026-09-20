@@ -22,10 +22,10 @@ if not LOCAL and not API:
 TOKEN = "" #Telegram Token
 GROQ_KEY = "" #Groq api token
 
-ADMIN_ID = [6493585504, 8571414006]
-BANNED = [7753558839]
-MAT = []
-GROUP_ID = -1002673502908
+ADMIN_ID = [] #Your ID
+BANNED = [] #Banned ID's
+MAT = [] #Curse words (optional)
+GROUP_ID = #Group ID (optional)
 
 # Groq config
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -133,7 +133,7 @@ def handle_text(m):
     print(f">>> [ID: {uid}] | {m.from_user.first_name}: {m.text}")
 
     if any(r in txt for r in MAT):
-        bot.reply_to(m, "[вы меня обидели я не куплю вам шоколадных орешков]")
+        bot.reply_to(m, "[*write a cool txt here*]")
         is_crashed, crash_time = True, time.time()
         return
 
