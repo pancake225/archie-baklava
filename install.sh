@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# ==========================================
-#           ARXH INSTALLER
-# ==========================================
-
+#make sure that you have pacman o apt using distro!
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
