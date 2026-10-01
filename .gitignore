@@ -1,0 +1,7 @@
+arxh.conf
+venv/
+MODELS/
+.broken_versions/
+.old_versions/
+ai_core.py.backup
+__pycache__/
