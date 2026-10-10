@@ -28,7 +28,7 @@ echo "║              ██                                          ║"
 echo "║       ██       ██                                        ║"
 echo "║              ██                                          ║"
 echo "║                                                          ║"
-echo "║  >  starter     • v0.3                                   ║"
+echo "║  >  starter     • v0.5                                   ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
@@ -78,6 +78,16 @@ if [ "$API" = "True" ]; then
         echo "[!] GROQ_KEY is empty!"
     else
         echo "[✓] Groq key detected"
+    fi
+fi
+
+#Check OpenRouter key if enabled
+if [ "$OPENROUTER" = "True" ]; then
+    echo "[i] OpenRouter mode. Checking key..."
+    if [ -z "$OPENROUTER_KEY" ] && [ -z "$OPENROUTER_API_KEY" ]; then
+        echo "[!] OPENROUTER_KEY is empty!"
+    else
+        echo "[✓] OpenRouter key detected"
     fi
 fi
 

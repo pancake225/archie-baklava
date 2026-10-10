@@ -72,7 +72,7 @@ def run():
 
     entry.bind("<Return>", send)
 
-    append_log("[SYSTEM]", f"Provider: {'Local (Ollama)' if ai_core.LOCAL else 'Groq API'} | Profile: GUI")
+    append_log("[SYSTEM]", f"Provider: {ai_core.provider_label()} | Profile: GUI")
 
     root.mainloop()
 

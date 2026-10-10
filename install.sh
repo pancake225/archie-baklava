@@ -27,7 +27,7 @@ echo "║              ██                                          ║"
 echo "║       ██       ██                                        ║"
 echo "║              ██                                          ║"
 echo "║                                                          ║"
-echo "║  > installer :3 • v0.3                                   ║"
+echo "║  > installer :3 • v0.6                                   ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
@@ -160,6 +160,9 @@ sed -i "s|^GROQ_KEY = .*|GROQ_KEY = \"$GROQ_KEY\"|" ai_core.py
 sed -i "s|^GROUP_ID = .*|GROUP_ID = $GROUP_ID|" ai_core.py
 sed -i "s|^LOCAL = .*|LOCAL = $LOCAL|" ai_core.py
 sed -i "s|^API = .*|API = $API|" ai_core.py
+sed -i "s|^OPENROUTER = .*|OPENROUTER = ${OPENROUTER:-False}|" ai_core.py
+sed -i "s|^OPENROUTER_KEY = .*|OPENROUTER_KEY = \"${OPENROUTER_KEY:-}\"|" ai_core.py
+sed -i "s|^OPENROUTER_MODEL = .*|OPENROUTER_MODEL = \"${OPENROUTER_MODEL:-openrouter/auto}\"|" ai_core.py
 sed -i "s|^OLLAMA_MODEL = .*|OLLAMA_MODEL = \"$OLLAMA_MODEL\"|" ai_core.py
 sed -i "s|^EMOJI_ENABLED = .*|EMOJI_ENABLED = $EMOJI_ENABLED|" ai_core.py
 
@@ -209,10 +212,27 @@ if [ -f "$PROJECT_DIR/vision.py" ]; then
     echo "[✓] vision.py configured"
 fi
 
+# --- archie-agent command ---
+install_launcher() {
+    local tmp; tmp="$(mktemp)"
+    sed "s|@PROJECT_DIR@|$PROJECT_DIR|g" "$PROJECT_DIR/scripts/archie-agent.sh" > "$tmp"
+    if [ -w /usr/local/bin ] && install -m 755 "$tmp" /usr/local/bin/archie-agent; then :
+    elif sudo install -m 755 "$tmp" /usr/local/bin/archie-agent 2>/dev/null \
+      || doas install -m 755 "$tmp" /usr/local/bin/archie-agent 2>/dev/null; then :
+    else
+        mkdir -p "$HOME/.local/bin"
+        install -m 755 "$tmp" "$HOME/.local/bin/archie-agent"
+        echo "[!] Installed to ~/.local/bin - make sure it's on your PATH."
+    fi
+    rm -f "$tmp"
+    echo "[✓] Command installed: archie-agent"
+}
+install_launcher
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  [✓] installation success!                               ║"
 echo "║                                                          ║"
-echo "║  Next: ./start.sh                                        ║"
+echo "║  Next: archie-agent --cli   (or ./start.sh)              ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""

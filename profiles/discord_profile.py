@@ -13,6 +13,8 @@ DISCORD_TOKEN / DISCORD_ADMIN_ID / DISCORD_BROADCAST_CHANNEL_ID are
 filled in by install.sh from arxh.conf.
 """
 
+import os
+import tempfile
 import time
 
 import ai_core
@@ -37,7 +39,7 @@ def run():
     @client.event
     async def on_ready():
         print("")
-        print(f"[i] Provider: {'Local (Ollama)' if ai_core.LOCAL else 'Groq API'}")
+        print(f"[i] Provider: {ai_core.provider_label()}")
         print("[i] Profile: Discord")
         print(f"[✓] Logged in as {client.user}")
 
@@ -101,7 +103,7 @@ def run():
                 import requests as _requests
 
                 att = message.attachments[0]
-                save_path = f"/tmp/archie_discord_{uid}.jpg"
+                save_path = os.path.join(tempfile.gettempdir(), f"archie_discord_{uid}.jpg")
                 r = _requests.get(att.url, timeout=30)
                 r.raise_for_status()
                 with open(save_path, "wb") as f:

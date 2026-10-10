@@ -13,7 +13,7 @@ CLI_UID = "cli-local-user"
 
 def run():
     print("")
-    print(f"[i] Provider: {'Local (Ollama)' if ai_core.LOCAL else 'Groq API'}")
+    print(f"[i] Provider: {ai_core.provider_label()}")
     print("[i] Profile: CLI")
     print("[i] Type your message and press Enter. Commands:")
     print("    /session admin   - switch to admin instruction mode")

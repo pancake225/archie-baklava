@@ -8,6 +8,8 @@ other profiles (Discord/CLI/GUI). Behavior is unchanged.
 TOKEN is filled in by install.sh from arxh.conf.
 """
 
+import os
+import tempfile
 import time
 
 import telebot
@@ -93,7 +95,7 @@ def run():
         photo = m.photo[-1]
         file_id = photo.file_id
 
-        save_path = f"/tmp/archie_photo_{uid}.jpg"
+        save_path = os.path.join(tempfile.gettempdir(), f"archie_photo_{uid}.jpg")
         downloaded = download_telegram_photo(bot, file_id, save_path)
 
         if not downloaded:
@@ -119,7 +121,7 @@ def run():
             bot.reply_to(m, "[ERROR] Could not process image.")
 
     print("")
-    print(f"[i] Provider: {'Local (Ollama)' if ai_core.LOCAL else 'Groq API'}")
+    print(f"[i] Provider: {ai_core.provider_label()}")
     print("[i] Profile: Telegram")
     bot.infinity_polling(skip_pending=True)
 

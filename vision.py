@@ -11,7 +11,7 @@ import ollama
 # ==========================================
 #           CONFIG
 # ==========================================
-VISION_ENABLED = True
+VISION_ENABLED = False
 VISION_MODEL = "llava:7b"
 
 # ==========================================

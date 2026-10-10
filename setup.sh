@@ -21,7 +21,7 @@ echo "║              ██                                          ║"
 echo "║       ██       ██                                        ║"
 echo "║              ██                                          ║"
 echo "║                                                          ║"
-echo "║  > setup wizard • v0.3                                   ║"
+echo "║  > setup wizard • v0.5                                   ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
@@ -92,13 +92,17 @@ echo ""
 echo "[5/10] Choose your AI provider:"
 echo "  1) Local (Ollama)"
 echo "  2) Groq API"
-echo "  3) Both (fallback)"
+echo "  3) Both (Ollama + Groq fallback)"
+echo "  4) OpenRouter"
+echo "  5) Local + OpenRouter (fallback)"
 read -p "> " PROVIDER_CHOICE
 case $PROVIDER_CHOICE in
-    1) LOCAL="True";  API="False" ;;
-    2) LOCAL="False"; API="True"  ;;
-    3) LOCAL="True";  API="True"  ;;
-    *) LOCAL="True";  API="False" ;;
+    1) LOCAL="True";  API="False"; OPENROUTER="False" ;;
+    2) LOCAL="False"; API="True";  OPENROUTER="False" ;;
+    3) LOCAL="True";  API="True";  OPENROUTER="False" ;;
+    4) LOCAL="False"; API="False"; OPENROUTER="True"  ;;
+    5) LOCAL="True";  API="False"; OPENROUTER="True"  ;;
+    *) LOCAL="True";  API="False"; OPENROUTER="False" ;;
 esac
 echo ""
 
@@ -109,6 +113,17 @@ if [ "$API" = "True" ]; then
 else
     GROQ_KEY=""
     echo "[6/10] Skipped (API off)"
+fi
+echo ""
+
+OPENROUTER_KEY=""
+OPENROUTER_MODEL="openrouter/auto"
+if [ "$OPENROUTER" = "True" ]; then
+    echo "[6b/10] Write your OpenRouter API key:"
+    read -p "> " OPENROUTER_KEY
+    echo "[6b/10] OpenRouter model (default: openrouter/auto):"
+    read -p "> " OPENROUTER_MODEL_IN
+    [ -n "$OPENROUTER_MODEL_IN" ] && OPENROUTER_MODEL="$OPENROUTER_MODEL_IN"
 fi
 echo ""
 
@@ -249,7 +264,10 @@ ADMIN_IDS="$ADMIN_IDS"
 GROUP_ID="$GROUP_ID"
 LOCAL="$LOCAL"
 API="$API"
+OPENROUTER="$OPENROUTER"
 GROQ_KEY="$GROQ_KEY"
+OPENROUTER_KEY="$OPENROUTER_KEY"
+OPENROUTER_MODEL="$OPENROUTER_MODEL"
 OLLAMA_MODEL="$OLLAMA_MODEL"
 BASE_INSTRUCTION="$BASE_INSTRUCTION"
 ADMIN_INSTRUCTION="$ADMIN_INSTRUCTION"
