@@ -95,14 +95,19 @@ def run():
 
         instr = ai_core.instruction_for(uid, is_admin)
         content = message.content
+        has_image = False
 
         # Basic image support via attachments (mirrors Telegram vision handler)
-        if message.attachments:
+        att = next(
+            (a for a in message.attachments
+             if (a.content_type or "").lower().startswith("image/")),
+            None,
+        )
+        if att is not None:
             try:
                 from vision import describe_image
                 import requests as _requests
 
-                att = message.attachments[0]
                 save_path = os.path.join(tempfile.gettempdir(), f"archie_discord_{uid}.jpg")
                 r = _requests.get(att.url, timeout=30)
                 r.raise_for_status()
@@ -113,20 +118,22 @@ def run():
                 content = f"[User sent an image. Description: {description}]"
                 if message.content:
                     content += f"\n[Caption: {message.content}]"
+                has_image = True
             except Exception as e:
                 print(f"\033[91m[VISION ERROR]\033[0m {e}")
 
         should_respond = (
             "archie" in txt
             or (is_admin and ai_core.modes.get(uid) == "admin")
-            or bool(message.attachments)
+            or has_image
         )
 
         if should_respond:
             try:
                 ans = ai_core.run_with_tools(uid, content, instr)
                 if ans:
-                    await message.reply(ai_core.strip_emoji(ans))
+                    for chunk in ai_core.split_message(ai_core.strip_emoji(ans), 1900):
+                        await message.reply(chunk)
             except Exception as e:
                 print(f"Error: {e}")
                 await message.reply("[Unable to get a response from the server]")

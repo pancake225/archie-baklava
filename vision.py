@@ -34,7 +34,9 @@ def describe_image(image_path):
                 "images": [image_path]
             }]
         )
-        return response['message']['content']
+        if isinstance(response, dict):
+            return response["message"]["content"]
+        return response.message.content
     except Exception as e:
         print(f"\033[91m[VISION ERROR]\033[0m {e}")
         return f"[VISION ERROR] {e}"

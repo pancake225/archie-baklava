@@ -65,7 +65,11 @@ function Read-Conf($path) {
 }
 function Set-ConfValue($key, $value) {
     $text = [IO.File]::ReadAllText($ConfFile)
-    $text = [regex]::Replace($text, "(?m)^$key=.*$", { param($m) "$key=`"$value`"" })
+    if ($text -match "(?m)^$key=") {
+        $text = [regex]::Replace($text, "(?m)^$key=.*$", { param($m) "$key=`"$value`"" })
+    } else {
+        $text = $text.TrimEnd() + "`r`n$key=`"$value`"`r`n"
+    }
     [IO.File]::WriteAllText($ConfFile, $text, (New-Object Text.UTF8Encoding $false))
 }
 $conf = Read-Conf $ConfFile
@@ -89,6 +93,25 @@ if ($profileType -eq "gui") {
     & $vpy -c "import tkinter" 2>$null
     if ($LASTEXITCODE -ne 0) { Warn "Tkinter missing - reinstall Python from python.org with 'tcl/tk' ticked." }
 }
+
+# ---------- Mode selection (lightweight/performance) ----------
+Info "[2b/3] Selecting performance mode..."
+Write-Host ""
+Write-Host "  Performance modes:"
+Write-Host "    1) Default - balanced"
+Write-Host "    2) Performance - max speed/resources (bigger models, more tool steps)"
+Write-Host "    3) Lightweight - minimal RAM/VRAM usage (small models, less history)"
+Write-Host "    4) Compatibility - older hardware/support"
+$modeChoice = Read-Host "  Select mode (1-4)"
+switch ($modeChoice) {
+    "1" { $perfMode = "default" }
+    "2" { $perfMode = "performance" }
+    "3" { $perfMode = "lightweight" }
+    "4" { $perfMode = "compat" }
+    default { $perfMode = "default" }
+}
+Set-ConfValue "MODE" $perfMode
+Info "Selected mode: $perfMode"
 
 # ---------- Ollama ----------
 $needOllama = ($conf["LOCAL"] -eq "True") -or ($conf["VISION_ENABLED"] -eq "True")

@@ -57,6 +57,38 @@ BASE_INSTRUCTION = "You are a helpful, neutral assistant. Answer concisely and c
 ADMIN_INSTRUCTION = "You are in ADMINISTRATOR mode. Speak seriously and directly."
 
 MAX_TOOL_STEPS = 6
+DEFAULT_HISTORY_LIMIT = 10
+
+# Mode settings
+PERFORMANCE_MODE = False   # more tool steps, larger context, more aggressive
+LIGHTWEIGHT_MODE = False   # fewer tool steps, smaller context, lower resource use
+COMPAT_MODE = False        # older hardware/OS compatibility
+PERF_HISTORY_LIMIT = 20
+PERF_MAX_TOOL_STEPS = 10
+PERF_TEMPERATURE = 0.8
+
+
+def mode_limits():
+    """Effective history/tool-step/temperature limits for the active mode."""
+    if PERFORMANCE_MODE:
+        return {
+            "history": PERF_HISTORY_LIMIT,
+            "steps": PERF_MAX_TOOL_STEPS,
+            "temperature": PERF_TEMPERATURE,
+        }
+    if LIGHTWEIGHT_MODE or COMPAT_MODE:
+        return {"history": 6, "steps": 3, "temperature": 0.7}
+    return {"history": DEFAULT_HISTORY_LIMIT, "steps": MAX_TOOL_STEPS, "temperature": 0.8}
+
+
+def mode_label():
+    if PERFORMANCE_MODE:
+        return "performance"
+    if LIGHTWEIGHT_MODE:
+        return "lightweight"
+    if COMPAT_MODE:
+        return "compat"
+    return "default"
 
 
 def _make_client():
@@ -103,6 +135,8 @@ _CONFIGURABLE = {
     "LOCAL", "API", "OPENROUTER", "GROQ_KEY", "GROQ_MODEL", "OLLAMA_MODEL",
     "OPENROUTER_KEY", "OPENROUTER_MODEL", "ADMIN_ID", "BANNED",
     "MAT", "GROUP_ID", "EMOJI_ENABLED", "BASE_INSTRUCTION", "ADMIN_INSTRUCTION",
+    "PERFORMANCE_MODE", "LIGHTWEIGHT_MODE", "COMPAT_MODE", "PERF_HISTORY_LIMIT",
+    "PERF_MAX_TOOL_STEPS", "PERF_TEMPERATURE", "MAX_TOOL_STEPS", "DEFAULT_HISTORY_LIMIT",
 }
 
 
@@ -207,7 +241,11 @@ def _ask_ollama(full_messages, tools):
     kwargs = {
         "model": OLLAMA_MODEL,
         "messages": _to_ollama(full_messages),
-        "options": {"temperature": 0.8, "top_p": 0.9, "repeat_penalty": 1.15},
+        "options": {
+            "temperature": mode_limits()["temperature"],
+            "top_p": 0.9,
+            "repeat_penalty": 1.15,
+        },
     }
     if tools:
         kwargs["tools"] = tools
@@ -292,6 +330,33 @@ def strip_emoji(text):
     return emoji_pattern.sub(r"", text)
 
 
+def split_message(text, limit=4000):
+    """Split long replies on paragraph/word boundaries (Telegram/Discord caps)."""
+    text = text or ""
+    limit = max(1, int(limit))
+    if not text:
+        return []
+    if len(text) <= limit:
+        return [text]
+
+    chunks = []
+    rest = text
+    while len(rest) > limit:
+        cut = rest.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = rest.rfind(" ", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+            chunks.append(rest[:cut])
+            rest = rest[cut:]
+        else:
+            chunks.append(rest[:cut].rstrip())
+            rest = rest[cut:].lstrip("\n ")
+    if rest:
+        chunks.append(rest)
+    return [c for c in chunks if c]
+
+
 # ==========================================
 #           Shared chat pipeline
 # ==========================================
@@ -308,11 +373,13 @@ def run_with_tools(uid, text, instr):
     final answer, and returns it. Tool traffic stays in a scratch list; only
     the final user/assistant text is stored in history.
     """
+    limits = mode_limits()
+
     if uid not in history:
         history[uid] = []
 
     history[uid].append({"role": "user", "content": text})
-    history[uid] = history[uid][-10:]
+    history[uid] = history[uid][-limits["history"]:]
     while history[uid] and history[uid][0]["role"] != "user":
         history[uid].pop(0)
 
@@ -321,7 +388,7 @@ def run_with_tools(uid, text, instr):
 
     ans, calls = ask_llm(work, instr, tools=tools)
     steps = 0
-    while calls and steps < MAX_TOOL_STEPS:
+    while calls and steps < limits["steps"]:
         steps += 1
         work.append({"role": "assistant", "content": ans or None, "tool_calls": calls})
         for c in calls:

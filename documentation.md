@@ -13,7 +13,20 @@
 ## Flags (everything dangerous is OFF by default)
     --cli --gui --telegram --discord
     --allow-access-to-files --allow-access-to-internet --allow-access-to-apply
-    --allow-shell --allow-all --read-only --yes --workdir DIR --unrestricted-paths
-    --provider local|groq|openrouter|both|local+openrouter|all --model NAME --openrouter-model ID --system-prompt TEXT --admin
+    --allow-shell --allow-email --allow-all --read-only --yes --workdir DIR --unrestricted-paths
+    --provider local|groq|openrouter|both|local+openrouter|groq+openrouter|all
+    --model NAME --groq-model NAME --openrouter-model ID --system-prompt TEXT --admin
+    --mode default|performance|lightweight|compat
     --emoji/--no-emoji --vision/--no-vision --show-permissions
     archie-agent --help   for the full list
+
+## Email (optional)
+
+Email is separate from `--allow-all` because it is private data. To let the
+agent read mail (read-only; messages are not marked as read), export the IMAP
+credentials and add `--allow-email`:
+
+    export ARCHIE_MAIL_HOST=imap.example.com
+    export ARCHIE_MAIL_USER=you@example.com
+    export ARCHIE_MAIL_PASSWORD=app-password
+    archie-agent --cli --allow-email

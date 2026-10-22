@@ -4,15 +4,17 @@ Archie Agent Tools
 Permission-gated tools the LLM can call. Everything is OFF by default;
 archie_agent.py flips the switches in PERMS from the command line:
 
-    --allow-access-to-files      -> list_dir, read_file
+    --allow-access-to-files      -> list_dir, read_file, find_files, grep_files
     --allow-access-to-internet   -> search_internet, fetch_url
     --allow-access-to-apply      -> write_file, replace_in_file (implies files)
     --allow-shell                -> run_command
+    --allow-email                -> fetch_email
 
 NOTE: this is a permission layer, not a sandbox. Path checks keep the
 agent inside the workdir, but run_command can do anything your user can.
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -27,6 +29,7 @@ class Permissions:
         self.internet = False
         self.apply = False
         self.shell = False
+        self.email = False              # email reading via IMAP
         self.auto_yes = False            # --yes: skip approval prompts
         self.interactive = False         # True only for CLI profile on a real terminal
         self.unrestricted_paths = False  # --unrestricted-paths
@@ -41,6 +44,7 @@ class Permissions:
             "internet": self.internet,
             "apply": self.apply,
             "shell": self.shell,
+            "email": self.email,
         }
 
 
@@ -51,7 +55,18 @@ FLAG_FOR = {
     "internet": "--allow-access-to-internet",
     "apply": "--allow-access-to-apply",
     "shell": "--allow-shell",
+    "email": "--allow-email",
 }
+
+# Folders that are never interesting to the model and can be huge.
+IGNORED_DIRS = {
+    ".git", ".hg", ".svn", ".venv", "venv", "node_modules", "__pycache__",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build", ".idea",
+    ".vscode",
+}
+MAX_GREP_FILE = 1_000_000  # skip files bigger than ~1 MB
+MAX_FIND_RESULTS = 500
+MAX_GREP_RESULTS = 200
 
 
 # ==========================================
@@ -99,6 +114,35 @@ def _html_to_text(html):
     return re.sub(r"\s+", " ", unescape(html)).strip()
 
 
+def _as_bool(value, default=True):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on", "y")
+
+
+def _as_int(value, default, low, high):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = default
+    return max(low, min(value, high))
+
+
+def _walk_files(root):
+    """Walk root without following symlinks or descending into noise folders."""
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if d not in IGNORED_DIRS and not (Path(dirpath) / d).is_symlink()
+        )
+        for name in sorted(filenames):
+            p = Path(dirpath) / name
+            if not p.is_symlink():
+                yield p
+
+
 # ==========================================
 #           Tools: internet
 # ==========================================
@@ -106,7 +150,8 @@ def search_internet(query):
     print(f"\033[94m[Searching...]\033[0m {query}")
     try:
         from googlesearch import search
-        results = search(query, num_results=3, lang="ru")
+        lang = os.environ.get("ARCHIE_SEARCH_LANG", "en")
+        results = search(query, num_results=3, lang=lang)
         res_list = [str(r) for r in results]
         return "Files from internet:\n" + "\n".join(res_list) if res_list else "I dont find any information."
     except Exception as e:
@@ -143,6 +188,66 @@ def read_file(path):
         return f"[ERROR] Not a file: {p}"
     data = p.read_text(encoding="utf-8", errors="replace")
     return _clip(data, PERMS.max_read)
+
+
+def find_files(pattern="*", path="."):
+    """Find files by shell-style glob (e.g. '*.py', 'src/**/*.json')."""
+    root = _resolve(path)
+    if not root.is_dir():
+        return f"[ERROR] Not a directory: {root}"
+    pattern = str(pattern or "*").strip() or "*"
+    if os.path.isabs(pattern):
+        return "[ERROR] Pattern must be relative, e.g. '*.py' or 'src/**/*.py'."
+
+    matches = []
+    truncated = False
+    for p in _walk_files(root):
+        rel = p.relative_to(root).as_posix()
+        if fnmatch.fnmatch(p.name, pattern) or fnmatch.fnmatch(rel, pattern):
+            matches.append(rel)
+            if len(matches) >= MAX_FIND_RESULTS:
+                truncated = True
+                break
+
+    if not matches:
+        return f"No files matching {pattern!r} in {root}."
+    more = f"\n...[stopped at {MAX_FIND_RESULTS} results]" if truncated else ""
+    return f"{len(matches)} match(es) for {pattern!r} in {root}:\n" + "\n".join(matches) + more
+
+
+def grep_files(pattern, path=".", glob="*", max_results=50):
+    """Search file contents with a Python regular expression."""
+    root = _resolve(path)
+    if not root.is_dir():
+        return f"[ERROR] Not a directory: {root}"
+    try:
+        rx = re.compile(pattern)
+    except re.error as e:
+        return f"[ERROR] Invalid regex: {e}"
+
+    glob = str(glob or "*").strip() or "*"
+    limit = _as_int(max_results, 50, 1, MAX_GREP_RESULTS)
+    results = []
+
+    for p in _walk_files(root):
+        if not fnmatch.fnmatch(p.name, glob):
+            continue
+        try:
+            if p.stat().st_size > MAX_GREP_FILE:
+                continue
+            data = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = p.relative_to(root).as_posix()
+        for lineno, line in enumerate(data.splitlines(), 1):
+            if rx.search(line):
+                results.append(f"{rel}:{lineno}: {line.strip()[:300]}")
+                if len(results) >= limit:
+                    return "\n".join(results) + f"\n...[stopped at {limit} matches]"
+
+    if not results:
+        return f"No matches for {pattern!r} in {root} (glob {glob!r})."
+    return "\n".join(results)
 
 
 # ==========================================
@@ -190,6 +295,118 @@ def run_command(command):
 
 
 # ==========================================
+#           Tools: email
+# ==========================================
+def _decode_part(part):
+    payload = part.get_payload(decode=True)
+    if payload is None:
+        raw = part.get_payload()
+        return raw if isinstance(raw, str) else ""
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset, errors="replace")
+    except LookupError:
+        return payload.decode("utf-8", errors="replace")
+
+
+def _email_body(msg):
+    """Prefer text/plain, fall back to text/html, and handle nested multiparts."""
+    plain = ""
+    html = ""
+    parts = msg.walk() if msg.is_multipart() else [msg]
+    for part in parts:
+        if part.get_content_maintype() == "multipart":
+            continue
+        ctype = part.get_content_type()
+        if ctype == "text/plain" and not plain:
+            plain = _decode_part(part)
+        elif ctype == "text/html" and not html:
+            html = _decode_part(part)
+    if plain.strip():
+        return plain.strip()
+    if html.strip():
+        return _html_to_text(html)
+    return ""
+
+
+def _parse_email_message(msg):
+    """Best-effort parse of an email into subject/from/to/date/body."""
+    return {
+        "subject": str(msg.get("Subject", "") or ""),
+        "from": str(msg.get("From", "") or ""),
+        "to": str(msg.get("To", "") or ""),
+        "date": str(msg.get("Date", "") or ""),
+        "body": _email_body(msg),
+    }
+
+
+def fetch_email(mailbox="INBOX", limit=10, unread_only=True, user_id=None):
+    """
+    Fetch emails from a mailbox via IMAP (read-only; messages stay unread).
+    Credentials come from ARCHIE_MAIL_HOST / ARCHIE_MAIL_USER /
+    ARCHIE_MAIL_PASSWORD. Returns the most recent `limit` messages that match.
+    """
+    import imaplib
+    import email as email_module
+
+    host = os.environ.get("ARCHIE_MAIL_HOST", "")
+    user = user_id or os.environ.get("ARCHIE_MAIL_USER", "")
+    password = os.environ.get("ARCHIE_MAIL_PASSWORD", "")
+
+    if not host or not user or not password:
+        return "[ERROR] Email not configured. Set ARCHIE_MAIL_HOST, ARCHIE_MAIL_USER, ARCHIE_MAIL_PASSWORD."
+
+    mailbox = str(mailbox or "INBOX").strip().strip('"') or "INBOX"
+    limit = _as_int(limit, 10, 1, 50)
+    unread_only = _as_bool(unread_only, True)
+    criteria = "UNSEEN" if unread_only else "ALL"
+
+    mail = None
+    try:
+        mail = imaplib.IMAP4_SSL(host, timeout=30)
+        mail.login(user, password)
+        status, _ = mail.select(f'"{mailbox}"', readonly=True)
+        if status != "OK":
+            return f"[ERROR] Could not open mailbox {mailbox!r}."
+
+        status, messages = mail.search(None, criteria)
+        if status != "OK":
+            return f"[ERROR] IMAP search failed: {status}"
+        ids = messages[0].split()
+        if not ids:
+            return "No new emails found." if unread_only else "No emails found."
+
+        fetched = []
+        for num in ids[-limit:]:
+            status, data = mail.fetch(num, "(RFC822)")
+            if status != "OK" or not data:
+                continue
+            raw = next((item[1] for item in data if isinstance(item, tuple)), None)
+            if raw is None:
+                continue
+            fetched.append(_parse_email_message(email_module.message_from_bytes(raw)))
+
+        if not fetched:
+            return "No new emails found." if unread_only else "No emails found."
+
+        out = [f"Emails ({len(fetched)} found in {mailbox}):"]
+        for m in fetched:
+            out.append(
+                f"Subject: {m['subject']}\nFrom: {m['from']}\nTo: {m['to']}\n"
+                f"Date: {m['date']}\nBody: {m['body'][:1000]}"
+            )
+        return _clip("\n\n".join(out))
+    except Exception as e:
+        return f"[ERROR] Email fetch failed: {e}"
+    finally:
+        if mail is not None:
+            try:
+                mail.logout()
+            except Exception:
+                pass
+
+
+# ==========================================
 #           Registry
 # ==========================================
 def _spec(name, desc, props, required):
@@ -204,6 +421,8 @@ def _spec(name, desc, props, required):
 
 
 _S = {"type": "string"}
+_INT = {"type": "integer"}
+_BOOL = {"type": "boolean"}
 
 REGISTRY = {
     "search_internet": {
@@ -222,6 +441,18 @@ REGISTRY = {
         "perm": "files", "fn": read_file,
         "spec": _spec("read_file", "Read a text file", {"path": _S}, ["path"]),
     },
+    "find_files": {
+        "perm": "files", "fn": find_files,
+        "spec": _spec("find_files",
+                      "Find files by glob pattern, e.g. '*.py' or 'src/**/*.json'",
+                      {"pattern": _S, "path": _S}, ["pattern"]),
+    },
+    "grep_files": {
+        "perm": "files", "fn": grep_files,
+        "spec": _spec("grep_files",
+                      "Search file contents with a regular expression",
+                      {"pattern": _S, "path": _S, "glob": _S, "max_results": _INT}, ["pattern"]),
+    },
     "write_file": {
         "perm": "apply", "fn": write_file,
         "spec": _spec("write_file", "Create or overwrite a file (user approval required)",
@@ -236,6 +467,12 @@ REGISTRY = {
         "perm": "shell", "fn": run_command,
         "spec": _spec("run_command", "Run a shell command in the working directory (user approval required)",
                       {"command": _S}, ["command"]),
+    },
+    "fetch_email": {
+        "perm": "email", "fn": fetch_email,
+        "spec": _spec("fetch_email",
+                      "Read emails from your mailbox via IMAP (does not mark them as read)",
+                      {"mailbox": _S, "limit": _INT, "unread_only": _BOOL}, []),
     },
 }
 

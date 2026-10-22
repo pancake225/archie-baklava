@@ -19,6 +19,14 @@ from vision import describe_image, download_telegram_photo
 
 TOKEN = "REPLACE_ME_TELEGRAM_TOKEN"
 
+TELEGRAM_LIMIT = 4096
+
+
+def send_long(bot, message, text):
+    """Reply with text split to Telegram's per-message limit."""
+    for chunk in ai_core.split_message(ai_core.strip_emoji(text), TELEGRAM_LIMIT - 100):
+        bot.reply_to(message, chunk)
+
 
 def run():
     bot = telebot.TeleBot(TOKEN)
@@ -77,7 +85,7 @@ def run():
             try:
                 ans = ai_core.run_with_tools(uid, m.text, instr)
                 if ans:
-                    bot.reply_to(m, ans)
+                    send_long(bot, m, ans)
             except Exception as e:
                 print(f"Error: {e}")
                 bot.reply_to(m, "[Unable to get a response from the server]")
@@ -114,8 +122,7 @@ def run():
         try:
             ans = ai_core.run_with_tools(uid, user_message, ai_core.BASE_INSTRUCTION)
             if ans:
-                ans = ai_core.strip_emoji(ans)
-                bot.reply_to(m, ans)
+                send_long(bot, m, ans)
         except Exception as e:
             print(f"\033[91m[LLM ERROR]\033[0m {e}")
             bot.reply_to(m, "[ERROR] Could not process image.")

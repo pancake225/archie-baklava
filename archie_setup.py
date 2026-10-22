@@ -102,6 +102,11 @@ def main():
     ollama_model = ask("[7/10] Write your Ollama model (default: llama3.2):", default="llama3.2") \
         if local == "True" else "llama3.2"
 
+    mode = {1: "default", 2: "performance", 3: "lightweight", 4: "compat"}[
+        choose("[7b/10] Performance mode:",
+               ["Default (balanced)", "Performance (more context/tool steps)",
+                "Lightweight (low RAM/VRAM)", "Compatibility (old hardware)"], 1)]
+
     instr = choose("[8/10] Select instructions:",
                    ["Just working (neutral assistant)", "Just working, Russian edition",
                     "Silly", "Skip (you'll write the instruction yourself)"], 1)
@@ -127,9 +132,12 @@ def main():
         ("ADMIN_IDS", admin_ids), ("GROUP_ID", group_id), ("LOCAL", local), ("API", api), ("OPENROUTER", openrouter),
         ("GROQ_KEY", groq_key),
         ("OPENROUTER_KEY", openrouter_key), ("OPENROUTER_MODEL", openrouter_model), ("OLLAMA_MODEL", ollama_model),
+        ("MODE", mode),
         ("BASE_INSTRUCTION", base_instr), ("ADMIN_INSTRUCTION", admin_instr),
         ("VISION_ENABLED", vision_enabled), ("VISION_MODEL", "llava:7b"),
         ("EMOJI_ENABLED", emoji), ("BANNED_USERS", ",".join(banned)), ("MAT_WORDS", ",".join(mat)),
+        ("ALLOW_FILES", "False"), ("ALLOW_INTERNET", "False"),
+        ("ALLOW_APPLY", "False"), ("ALLOW_SHELL", "False"), ("ALLOW_EMAIL", "False"),
     ]
     lines = ["# ==========================================",
              "#           ARXH CONFIG",

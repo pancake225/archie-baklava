@@ -22,18 +22,19 @@ PROFILES = {
 
 
 def prompt_for_profile():
+    choices = {"1": "telegram", "2": "discord", "3": "cli", "4": "gui"}
     print("[0/10] Before we start: Please select your profile type:")
     print("  1) Telegram")
     print("  2) Discord")
     print("  3) CLI")
     print("  4) GUI")
-    choice = input("> ").strip()
-    return {
-        "1": "telegram",
-        "2": "discord",
-        "3": "cli",
-        "4": "gui",
-    }.get(choice, "telegram")
+    while True:
+        choice = input("> ").strip().lower()
+        if choice in choices:
+            return choices[choice]
+        if choice in choices.values():
+            return choice
+        print("[!] Invalid choice, try 1-4.")
 
 
 def main():

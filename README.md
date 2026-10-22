@@ -4,9 +4,11 @@ A modular AI framework with multi-interface support, hybrid backend management, 
 
 ## Features
 
-- Multi-Interface Support: Native profiles for CLI, GUI (PyQt/Tkinter), Discord, and Telegram.
+- Multi-Interface Support: Native profiles for CLI, GUI (Tkinter), Discord, and Telegram.
+- Agent Tools: Permission-gated file access (list/read/find/grep/edit), web search, shell commands, and read-only IMAP email, all off by default.
 - Vision Capability: Multimodal vision processing for analyzing image inputs alongside text prompts.
-- Hybrid LLM Backends: Modular core supporting multiple local and remote AI provider integrations.
+- Hybrid LLM Backends: Modular core supporting multiple local and remote AI provider integrations (Ollama, Groq, OpenRouter) with fallback.
+- Resource Modes: `default`, `performance`, `lightweight`, and `compat` presets for context size and tool-step budget.
 - Multi-Init Compatibility: Built-in support and helper scripts for systemd, OpenRC, runit, and SysV init systems.
 - Automated Setup: Embedded installation scripts for quick environment setup and dependency deployment.
 
@@ -14,19 +16,24 @@ A modular AI framework with multi-interface support, hybrid backend management, 
 
 ```text
 archie-baklava/
-├── ai_core.py             # Main AI backend logic and provider routing
+├── ai_core.py             # Shared config, LLM routing, chat pipeline
+├── agent_tools.py         # Permission-gated tools the model can call
 ├── vision.py              # Vision and image processing pipeline
-├── main.py                # Main application entry point
-├── arxh.conf              # Central configuration file
+├── main.py                # Entry point (env-var profile dispatch)
+├── archie_agent.py        # Cross-platform launcher with permission flags
+├── archie_setup.py        # Cross-platform setup wizard
+├── arxh.conf              # Central configuration file (generated)
 ├── setup.sh               # Environment setup script
 ├── start.sh               # Execution entry wrapper
-├── install.sh             # Dependency installer
+├── install.sh             # Dependency installer (Linux/macOS)
+├── install.ps1            # Dependency installer (Windows)
 ├── profiles/              # Interface modules
 │   ├── cli_profile.py     # Command-line interface
 │   ├── gui_profile.py     # Graphical user interface
 │   ├── discord_profile.py # Discord bot integration
 │   └── telegram_profile.py# Telegram bot integration
 └── scripts/
+    ├── archie-agent.sh    # Launcher installed onto PATH
     └── init_compat.sh     # Init system compatibility layer
 
 Prerequisites

@@ -2,11 +2,59 @@
 # ==========================================
 #   Init-system compatibility helpers
 #   systemd / OpenRC / runit / SysV / none
+#   + Distro detection: Void, Alpine, Gentoo, etc.
 # ==========================================
 # Sourced by install.sh and start.sh. Lets both scripts manage the
 # Ollama service without assuming systemd is present.
 
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "$ID"
+    elif [ -f /etc/alpine-release ]; then
+        echo "alpine"
+    elif [ -f /etc/gentoo-release ]; then
+        echo "gentoo"
+    elif [ -f /etc/void-release ]; then
+        echo "void"
+    else
+        echo "unknown"
+    fi
+}
+
 detect_init_system() {
+    local distro
+    distro=$(detect_distro)
+    
+    # Distro-specific init system hints
+    case "$distro" in
+        void)
+            # Void uses runit by default
+            if command -v sv &> /dev/null && [ -d /etc/sv ]; then
+                echo "runit"
+                return
+            fi
+            ;;
+        alpine)
+            # Alpine uses OpenRC
+            if command -v rc-service &> /dev/null; then
+                echo "openrc"
+                return
+            fi
+            ;;
+        gentoo)
+            # Gentoo can use OpenRC or systemd
+            if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+                echo "systemd"
+                return
+            elif command -v rc-service &> /dev/null; then
+                echo "openrc"
+                return
+            fi
+            ;;
+    esac
+    
+    # Fallback generic detection
     if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
         echo "systemd"
     elif command -v rc-service &> /dev/null; then
@@ -20,10 +68,28 @@ detect_init_system() {
     fi
 }
 
+detect_package_manager() {
+    local distro
+    distro=$(detect_distro)
+    
+    case "$distro" in
+        void)      echo "xbps-install" ;;
+        alpine)    echo "apk" ;;
+        gentoo)    echo "emerge" ;;
+        arch|manjaro|endeavouros|garuda|artix) echo "pacman" ;;
+        debian|ubuntu|linuxmint|pop|elementary|kali|parrot) echo "apt" ;;
+        fedora|rhel|centos|rocky|almalinux) echo "dnf" ;;
+        opensuse*) echo "zypper" ;;
+        *)         echo "unknown" ;;
+    esac
+}
+
 # is_service_running <name>
 is_service_running() {
     local name="$1"
-    case "$(detect_init_system)" in
+    local init
+    init=$(detect_init_system)
+    case "$init" in
         systemd) systemctl is-active --quiet "$name" ;;
         openrc)  rc-service "$name" status &> /dev/null ;;
         runit)   sv status "$name" &> /dev/null ;;
@@ -99,16 +165,22 @@ configure_ollama_models_dir() {
             doas rc-service ollama restart 2>/dev/null || sudo rc-service ollama restart 2>/dev/null || true
             sleep 2
             ;;
-        runit|sysv)
-            echo "[!] Can't automatically pin the models directory for '$init' yet."
-            echo "    Ollama will use its own default model location for now."
-            echo "    Set OLLAMA_MODELS=$models_dir wherever your $init service"
-            echo "    definition sources its environment, then restart it."
+        runit)
+            echo "[i] For runit: set OLLAMA_MODELS in the service definition"
+            echo "    and restart the service manually:"
+            echo "    ln -sf /etc/sv/ollama /etc/service/ollama"
+            echo "    sv restart ollama"
+            echo "    OR set it in /etc/environment or your shell profile"
             ;;
         none)
             echo "[i] No service manager detected — OLLAMA_MODELS is exported"
             echo "    directly in this shell and 'ollama serve' inherits it"
             echo "    correctly since we launch it ourselves."
+            ;;
+        *)
+            # Unknown init: try writing to environment and hope for the best
+            echo "[i] Unknown init system, exporting OLLAMA_MODELS in this shell"
+            echo "OLLAMA_MODELS=\"$models_dir\"" >> /etc/environment 2>/dev/null || true
             ;;
     esac
 }

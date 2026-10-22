@@ -62,5 +62,6 @@ Usually **not** vulnerabilities:
 
 - Keep `arxh.conf` private. It contains tokens and keys, so never commit or share it
 - Prefer the `GROQ_API_KEY` / `OPENROUTER_API_KEY` environment variables over command-line key flags, since flags end up in shell history
+- `--allow-email` is not part of `--allow-all`; mail credentials (`ARCHIE_MAIL_PASSWORD`) are read from the environment and never written to `arxh.conf`
 - Only grant the permissions a task needs, and use `--workdir` to limit file access
 - Be careful with `--allow-shell` and `--yes` when Archie reads untrusted content, such as web pages or other people's files

@@ -19,7 +19,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-__version__ = "0.5"
+__version__ = "0.6"
 
 HOME = Path(os.environ.get("ARCHIE_HOME") or Path(__file__).resolve().parent)
 sys.path.insert(0, str(HOME))
@@ -38,6 +38,7 @@ PROVIDER_MAP = {  # name -> (local, groq, openrouter)
     "openrouter": (False, False, True),
     "both": (True, True, False),
     "local+openrouter": (True, False, True),
+    "groq+openrouter": (False, True, True),
     "all": (True, True, True),
 }
 
@@ -47,6 +48,8 @@ examples:
   archie-agent --cli --allow-access-to-files --allow-access-to-internet
   archie-agent --cli --allow-access-to-apply --workdir ~/projects/site
   archie-agent --cli --allow-all --yes            # no questions asked (be careful)
+  archie-agent --cli --allow-email                # read-only IMAP access
+  archie-agent --cli --mode lightweight           # low-resource machines
   archie-agent --telegram --provider api --read-only
   archie-agent --cli --provider openrouter --openrouter-model openrouter/auto
   archie-agent --cli --model llama3.2 --no-emoji --admin
@@ -120,8 +123,10 @@ def build_parser():
                    help="let Archie apply changes: create/edit files (implies --allow-access-to-files)")
     a.add_argument("--allow-shell", action="store_true", default=None,
                    help="let Archie run shell commands in the workdir")
+    a.add_argument("--allow-email", action="store_true", default=None,
+                   help="let Archie read mail via IMAP (credential env vars, read-only)")
     a.add_argument("--allow-all", action="store_true", default=None,
-                   help="files + internet + apply + shell")
+                   help="files + internet + apply + shell (email stays separate)")
     a.add_argument("--read-only", action="store_true", default=None,
                    help="force-disable apply and shell, whatever else is set")
     a.add_argument("-y", "--yes", action="store_true", default=None,
@@ -145,6 +150,9 @@ def build_parser():
     b.add_argument("--groq-key", metavar="KEY",
                    help="Groq API key (prefer the GROQ_API_KEY env var — flags end up in shell history)")
     b.add_argument("--system-prompt", metavar="TEXT", help="replace the base instruction")
+    b.add_argument("--mode", choices=["default", "performance", "lightweight", "compat"],
+                   help="default = balanced; performance = more context/steps; "
+                        "lightweight/compat = less context/steps (low-end hardware)")
     b.add_argument("--admin", action="store_true", default=None, help="CLI: start in admin mode")
     b.add_argument("--emoji", action=argparse.BooleanOptionalAction, default=None, help="allow emoji in replies")
     b.add_argument("--vision", action=argparse.BooleanOptionalAction, default=None, help="image description")
@@ -174,13 +182,15 @@ def resolve_perms(a, conf):
     internet = pick(a.allow_access_to_internet, "ALLOW_INTERNET", "ARCHIE_ALLOW_INTERNET")
     apply_ = pick(a.allow_access_to_apply, "ALLOW_APPLY", "ARCHIE_ALLOW_APPLY")
     shell = pick(a.allow_shell, "ALLOW_SHELL", "ARCHIE_ALLOW_SHELL")
+    email = pick(a.allow_email, "ALLOW_EMAIL", "ARCHIE_ALLOW_EMAIL")
     if a.allow_all:
         files = internet = apply_ = shell = True
     if apply_:
         files = True
     if a.read_only:
         apply_ = shell = False
-    return {"files": files, "internet": internet, "apply": apply_, "shell": shell}
+    return {"files": files, "internet": internet, "apply": apply_,
+            "shell": shell, "email": email}
 
 
 def print_summary(profile, perms, workdir, ai_core, auto_yes, unrestricted):
@@ -188,9 +198,11 @@ def print_summary(profile, perms, workdir, ai_core, auto_yes, unrestricted):
         return "\033[92mON \033[0m" if b else "\033[90moff\033[0m"
 
     print(f"\033[92m[archie-agent {__version__}]\033[0m profile={profile} "
-          f"provider={ai_core.provider_label()} model={ai_core.primary_model()}")
+          f"provider={ai_core.provider_label()} model={ai_core.primary_model()} "
+          f"mode={ai_core.mode_label()}")
     print(f"  files    {mark(perms['files'])}   internet {mark(perms['internet'])}")
     print(f"  apply    {mark(perms['apply'])}   shell    {mark(perms['shell'])}")
+    print(f"  email    {mark(perms['email'])}")
     if perms["files"] or perms["apply"] or perms["shell"]:
         scope = "ANYWHERE" if unrestricted else str(workdir)
         print(f"  workdir  {scope}")
@@ -286,6 +298,8 @@ def main():
         ov["OPENROUTER_MODEL"] = conf["OPENROUTER_MODEL"]
     if conf.get("GROQ_KEY"):
         ov["GROQ_KEY"] = conf["GROQ_KEY"]
+    if conf.get("GROQ_MODEL"):
+        ov["GROQ_MODEL"] = conf["GROQ_MODEL"]
     if conf.get("OLLAMA_MODEL"):
         ov["OLLAMA_MODEL"] = conf["OLLAMA_MODEL"]
     if conf.get("BASE_INSTRUCTION"):
@@ -294,6 +308,13 @@ def main():
         ov["ADMIN_INSTRUCTION"] = conf["ADMIN_INSTRUCTION"]
     if "EMOJI_ENABLED" in conf:
         ov["EMOJI_ENABLED"] = truthy(conf["EMOJI_ENABLED"])
+    for conf_key, attr in (
+        ("PERFORMANCE_MODE", "PERFORMANCE_MODE"),
+        ("LIGHTWEIGHT_MODE", "LIGHTWEIGHT_MODE"),
+        ("COMPAT_MODE", "COMPAT_MODE"),
+    ):
+        if conf_key in conf:
+            ov[attr] = truthy(conf[conf_key])
     if "GROUP_ID" in conf:
         ov["GROUP_ID"] = (ints(conf["GROUP_ID"]) or [0])[0]
     if "BANNED_USERS" in conf:
@@ -321,6 +342,17 @@ def main():
         ov["BASE_INSTRUCTION"] = args.system_prompt
     if args.emoji is not None:
         ov["EMOJI_ENABLED"] = args.emoji
+
+    mode = args.mode or os.environ.get("ARCHIE_MODE") or conf.get("MODE")
+    if mode:
+        mode = str(mode).strip().lower()
+        if mode not in ("default", "performance", "lightweight", "compat"):
+            print(f"[!] Unknown mode '{mode}'. Use default, performance, lightweight or compat.")
+            return 2
+        ov["PERFORMANCE_MODE"] = mode == "performance"
+        ov["LIGHTWEIGHT_MODE"] = mode == "lightweight"
+        ov["COMPAT_MODE"] = mode == "compat"
+
     try:
         ai_core.configure(**ov)
     except RuntimeError as e:
@@ -345,6 +377,7 @@ def main():
     perms = resolve_perms(args, conf)
     P = agent_tools.PERMS
     P.files, P.internet, P.apply, P.shell = perms["files"], perms["internet"], perms["apply"], perms["shell"]
+    P.email = perms["email"]
     P.auto_yes = bool(args.yes)
     P.unrestricted_paths = bool(args.unrestricted_paths)
     P.interactive = profile == "cli" and sys.stdin.isatty()
