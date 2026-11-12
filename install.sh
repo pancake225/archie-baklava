@@ -96,15 +96,15 @@ install_system_deps() {
             fi
             ;;
         xbps-install)
-            sudo xbps update
-            sudo xbps install -y python python-pip python-virtualenv
+            sudo xbps-install -Syu
+            sudo xbps-install -y python python-pip python-virtualenv
             if [ "$PROFILE_TYPE" = "gui" ]; then
-                sudo xbps install -y python-tk || echo "[!] Couldn't install tk automatically — install it manually for the GUI profile."
+                sudo xbps-install -y python-tk || echo "[!] Couldn't install tk automatically — install it manually for the GUI profile."
             fi
             # Ollama: Void has a package
             if ! command -v ollama &> /dev/null; then
                 echo "[i] Installing Ollama on Void..."
-                sudo xbps install -y ollama 2>/dev/null || {
+                sudo xbps-install -y ollama 2>/dev/null || {
                     echo "[!] Ollama not in Void repos. Installing from source..."
                     curl -fsSL https://ollama.com/install.sh | sh 2>/dev/null || \
                     echo "[!] Couldn't install Ollama automatically — install it from https://ollama.com"
